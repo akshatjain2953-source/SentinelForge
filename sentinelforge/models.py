@@ -256,3 +256,36 @@ class AuditLog(BaseModel):
 
     def __repr__(self):
         return f"<AuditLog id={self.id} user_id={self.user_id} action={self.action} resource={self.resource_type}:{self.resource_id}>"
+
+
+class TelemetryQuarantine(BaseModel):
+    """Quarantined malformed or schema-invalid telemetry events.
+
+    Stores events that failed JSON parsing or Pydantic schema validation
+    for later analysis, reprocessing, or discarding.
+
+    Important: The original_payload field stores raw text for malformed
+    JSON (which cannot be parsed as JSON), and structured JSON for
+    schema-invalid payloads that were valid JSON.
+    """
+    __tablename__ = "telemetry_quarantine"
+
+    received_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    source_ip = Column(String(45), nullable=True, index=True)
+    content_type = Column(String(100), nullable=True)
+    original_payload = Column(Text, nullable=False)  # Raw text for malformed JSON; JSON text for schema-invalid
+    payload_type = Column(String(20), nullable=False, default="raw")  # "raw" for malformed JSON, "json" for schema-invalid
+    validation_errors = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    status = Column(String(20), nullable=False, default="quarantined", index=True)
+    reprocessed_at = Column(DateTime(timezone=True), nullable=True)
+    reprocessed_event_id = Column(Integer, ForeignKey("telemetry_events.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    reprocessed_event = relationship("TelemetryEvent", lazy="joined")
+
+    __table_args__ = (
+        Index("ix_quarantine_status_received", "status", "received_at"),
+        Index("ix_quarantine_source_ip", "source_ip"),
+    )
+
+    def __repr__(self):
+        return f"<TelemetryQuarantine id={self.id} status={self.status} source_ip={self.source_ip}>"

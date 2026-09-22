@@ -1,9 +1,12 @@
 """Telemetry ingestion endpoint for SentinelForge API v1."""
 from flask import Blueprint, jsonify, request
-from sqlalchemy.exc import SQLAlchemyError
 from sentinelforge.database import db
 from sentinelforge.telemetry.schema import validate_telemetry, ValidationError
 from sentinelforge.telemetry.normalize import create_telemetry_event
+from sentinelforge.telemetry.quarantine import (
+    quarantine_malformed_json,
+    quarantine_schema_invalid,
+)
 
 telemetry_bp = Blueprint("telemetry", __name__)
 
@@ -14,6 +17,7 @@ def ingest_telemetry():
 
     Expects JSON payload conforming to TelemetrySchema.
     Validates, normalizes, and persists to database.
+    Malformed/schema-invalid events are quarantined with audit entry.
     Returns validation result or error details.
     """
     if not request.is_json:
@@ -27,8 +31,21 @@ def ingest_telemetry():
             "path": request.path,
         }), 415
 
+    # Read raw body for potential quarantine
+    raw_body = request.get_data(as_text=True)
+
     data = request.get_json(silent=True)
     if data is None:
+        # Malformed JSON - quarantine and return 400
+        try:
+            quarantine_malformed_json(
+                raw_body=raw_body,
+                content_type=request.content_type,
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
         return jsonify({
             "status": "error",
             "error": {
@@ -42,6 +59,16 @@ def ingest_telemetry():
     try:
         validated = validate_telemetry(data)
     except ValidationError as e:
+        # Schema validation failed - quarantine and return 422
+        try:
+            quarantine_schema_invalid(
+                raw_body=raw_body,
+                validation_errors=e.errors,
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
         return jsonify({
             "status": "error",
             "error": {

@@ -446,5 +446,280 @@ class TelemetryPersistenceTestCase(unittest.TestCase):
         }
 
 
+class TelemetryQuarantineTestCase(unittest.TestCase):
+    """Test cases for telemetry quarantine functionality."""
+
+    def setUp(self):
+        self.app = create_app("testing")
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+        db.create_all()
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.app_context.pop()
+
+    def test_malformed_json_creates_quarantine_record(self):
+        """Test malformed JSON creates a quarantine record."""
+        from sentinelforge.models import TelemetryQuarantine
+
+        response = self.client.post(
+            "/api/v1/telemetry",
+            data="{ invalid json }",
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+        quarantine_records = TelemetryQuarantine.query.all()
+        self.assertEqual(len(quarantine_records), 1)
+        record = quarantine_records[0]
+        self.assertEqual(record.status, "quarantined")
+        self.assertEqual(record.payload_type, "raw")
+        self.assertIn("invalid json", record.original_payload)
+        self.assertIsNone(record.validation_errors)
+
+    def test_malformed_json_creates_audit_entry(self):
+        """Test malformed JSON creates an audit log entry."""
+        from sentinelforge.models import AuditLog
+
+        self.client.post(
+            "/api/v1/telemetry",
+            data="{ invalid json }",
+            content_type="application/json",
+        )
+
+        audit_logs = AuditLog.query.all()
+        self.assertEqual(len(audit_logs), 1)
+        audit = audit_logs[0]
+        self.assertEqual(audit.action, "telemetry_malformed_json")
+        self.assertEqual(audit.resource_type, "telemetry_quarantine")
+        self.assertIsNotNone(audit.resource_id)
+        self.assertEqual(audit.payload["status"], "quarantined")
+
+    def test_malformed_json_returns_400(self):
+        """Test malformed JSON returns 400 with safe error response."""
+        response = self.client.post(
+            "/api/v1/telemetry",
+            data="{ invalid json }",
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        data = response.get_json()
+        self.assertEqual(data["error"]["code"], 400)
+        self.assertEqual(data["error"]["message"], "Request body must be valid JSON")
+        # Payload should not be exposed in response
+        response_text = str(response.get_json())
+        self.assertNotIn("invalid json", response_text)
+
+    def test_schema_invalid_json_creates_quarantine_record(self):
+        """Test schema-invalid JSON creates a quarantine record with errors."""
+        from sentinelforge.models import TelemetryQuarantine
+
+        # Missing required fields
+        payload = {"event_type": "test", "source": "test"}  # no timestamp
+        response = self.client.post(
+            "/api/v1/telemetry",
+            json=payload,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 422)
+
+        quarantine_records = TelemetryQuarantine.query.all()
+        self.assertEqual(len(quarantine_records), 1)
+        record = quarantine_records[0]
+        self.assertEqual(record.status, "quarantined")
+        self.assertEqual(record.payload_type, "json")
+        self.assertIsNotNone(record.validation_errors)
+        self.assertEqual(len(record.validation_errors), 1)
+        self.assertEqual(record.validation_errors[0]["field"], "timestamp")
+
+    def test_schema_invalid_json_stores_validation_errors(self):
+        """Test schema-invalid JSON stores structured validation errors."""
+        from sentinelforge.models import TelemetryQuarantine
+
+        payload = {"timestamp": "invalid", "event_type": "test", "source": "test"}
+        self.client.post(
+            "/api/v1/telemetry",
+            json=payload,
+            content_type="application/json",
+        )
+
+        record = TelemetryQuarantine.query.first()
+        self.assertIsNotNone(record.validation_errors)
+        self.assertEqual(len(record.validation_errors), 1)
+        self.assertEqual(record.validation_errors[0]["field"], "timestamp")
+        # Message contains the validation error detail
+        self.assertIn("datetime", record.validation_errors[0]["message"])
+
+    def test_schema_invalid_json_creates_audit_entry(self):
+        """Test schema-invalid JSON creates an audit log entry with error summary."""
+        from sentinelforge.models import AuditLog
+
+        payload = {"event_type": "test", "source": "test"}  # missing timestamp
+        self.client.post(
+            "/api/v1/telemetry",
+            json=payload,
+            content_type="application/json",
+        )
+
+        audit_logs = AuditLog.query.all()
+        self.assertEqual(len(audit_logs), 1)
+        audit = audit_logs[0]
+        self.assertEqual(audit.action, "telemetry_schema_invalid")
+        self.assertEqual(audit.resource_type, "telemetry_quarantine")
+        self.assertIn("Schema validation failed", audit.payload["error_summary"])
+
+    def test_schema_invalid_json_returns_422(self):
+        """Test schema-invalid JSON returns 422 with safe error response."""
+        payload = {"event_type": "test", "source": "test"}  # missing timestamp
+        response = self.client.post(
+            "/api/v1/telemetry",
+            json=payload,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 422)
+        data = response.get_json()
+        self.assertEqual(data["error"]["code"], 422)
+        self.assertIn("details", data["error"])
+
+    def test_malformed_event_metric_increments(self):
+        """Test malformed event metric increments on both error types."""
+        from sentinelforge.telemetry.quarantine import get_malformed_metric, _increment_malformed_metric
+
+        # Reset counter
+        _increment_malformed_metric.count = 0
+
+        # Initial count should be 0
+        self.assertEqual(get_malformed_metric(), 0)
+
+        # Malformed JSON
+        self.client.post("/api/v1/telemetry", data="{ invalid }", content_type="application/json")
+        self.assertEqual(get_malformed_metric(), 1)
+
+        # Schema invalid
+        self.client.post("/api/v1/telemetry", json={"event_type": "test"}, content_type="application/json")
+        self.assertEqual(get_malformed_metric(), 2)
+
+    def test_valid_telemetry_still_persists_normally(self):
+        """Test valid telemetry still persists to TelemetryEvent."""
+        from sentinelforge.models import TelemetryEvent
+
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": "process_creation",
+            "source": "sysmon",
+            "process": {"name": "cmd.exe", "pid": 1234},
+        }
+        response = self.client.post("/api/v1/telemetry", json=payload, content_type="application/json")
+        self.assertEqual(response.status_code, 202)
+
+        events = TelemetryEvent.query.all()
+        self.assertEqual(len(events), 1)
+
+    def test_valid_telemetry_does_not_create_quarantine_record(self):
+        """Test valid telemetry does not create any quarantine record."""
+        from sentinelforge.models import TelemetryQuarantine
+
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": "process_creation",
+            "source": "sysmon",
+            "process": {"name": "cmd.exe", "pid": 1234},
+        }
+        self.client.post("/api/v1/telemetry", json=payload, content_type="application/json")
+
+        quarantine_records = TelemetryQuarantine.query.all()
+        self.assertEqual(len(quarantine_records), 0)
+
+    def test_database_failure_rolls_back_quarantine_transaction(self):
+        """Test database failure during quarantine rolls back the transaction."""
+        from sentinelforge.models import TelemetryQuarantine
+        from unittest.mock import patch
+        from sqlalchemy.exc import SQLAlchemyError
+
+        # Mock commit to fail during quarantine
+        with patch.object(db.session, "commit", side_effect=SQLAlchemyError("DB error")):
+            response = self.client.post(
+                "/api/v1/telemetry",
+                data="{ invalid json }",
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 400)
+
+        # Verify no quarantine record was persisted
+        quarantine_records = TelemetryQuarantine.query.all()
+        self.assertEqual(len(quarantine_records), 0)
+
+    def test_quarantined_payload_not_exposed_in_api_response(self):
+        """Test that quarantined payload is not exposed in API error response."""
+        # Test malformed JSON
+        response = self.client.post(
+            "/api/v1/telemetry",
+            data='{ "secret": "should-not-appear" }',
+            content_type="application/json",
+        )
+        response_text = str(response.get_json())
+        self.assertNotIn("should-not-appear", response_text)
+
+        # Test schema invalid
+        response = self.client.post(
+            "/api/v1/telemetry",
+            json={"timestamp": "invalid", "event_type": "test", "source": "test", "secret": "should-not-appear"},
+            content_type="application/json",
+        )
+        response_text = str(response.get_json())
+        self.assertNotIn("should-not-appear", response_text)
+
+    def test_no_sensitive_payload_in_audit_logs(self):
+        """Test that complete payloads are not written to audit logs."""
+        from sentinelforge.models import AuditLog
+
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": "test",
+            "source": "test",
+            "sensitive": "very-secret-data",
+        }
+        self.client.post("/api/v1/telemetry", json=payload, content_type="application/json")
+
+        audit_logs = AuditLog.query.all()
+        # Should have no audit logs for valid telemetry
+        self.assertEqual(len(audit_logs), 0)
+
+        # Now test malformed
+        self.client.post("/api/v1/telemetry", data="{ invalid }", content_type="application/json")
+        audit_logs = AuditLog.query.all()
+        self.assertEqual(len(audit_logs), 1)
+        audit_text = str(audit_logs[0].payload)
+        self.assertNotIn("very-secret-data", audit_text)
+
+    def test_malformed_json_stored_as_raw_text(self):
+        """Test malformed JSON is stored as raw text (payload_type=raw)."""
+        from sentinelforge.models import TelemetryQuarantine
+
+        malformed = '{ "unclosed": "object" '
+        self.client.post("/api/v1/telemetry", data=malformed, content_type="application/json")
+
+        record = TelemetryQuarantine.query.first()
+        self.assertEqual(record.payload_type, "raw")
+        self.assertEqual(record.original_payload, malformed)
+
+    def test_schema_invalid_json_stored_structurally(self):
+        """Test schema-invalid JSON is stored with payload_type=json and errors."""
+        from sentinelforge.models import TelemetryQuarantine
+
+        payload = {"event_type": "test", "source": "test"}  # missing timestamp
+        self.client.post("/api/v1/telemetry", json=payload, content_type="application/json")
+
+        record = TelemetryQuarantine.query.first()
+        self.assertEqual(record.payload_type, "json")
+        self.assertIsNotNone(record.validation_errors)
+        # Original payload stored as JSON text
+        self.assertIn("event_type", record.original_payload)
+        self.assertIn("source", record.original_payload)
+
+
 if __name__ == "__main__":
     unittest.main()

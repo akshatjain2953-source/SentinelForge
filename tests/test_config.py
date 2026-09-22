@@ -68,6 +68,7 @@ class DatabaseInitTestCase(unittest.TestCase):
                 "attck_techniques",
                 "alert_attck",
                 "audit_logs",
+                "telemetry_quarantine",
             }
             self.assertEqual(set(tables), expected_tables)
 
