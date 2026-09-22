@@ -49,15 +49,27 @@ class DatabaseInitTestCase(unittest.TestCase):
             self.assertIn("sqlite", str(db.engine.url))
 
     def test_database_tables_can_be_created(self):
-        """Verify database tables can be created (no models yet, just metadata)."""
+        """Verify database tables can be created with models."""
         app = create_app("testing")
         with app.app_context():
             db.create_all()
             # Should not raise - tables created successfully
             inspector = db.inspect(db.engine)
-            # No tables expected yet since no models defined
             tables = inspector.get_table_names()
-            self.assertEqual(tables, [])
+            expected_tables = {
+                "users",
+                "roles",
+                "user_roles",
+                "telemetry_events",
+                "detection_rules",
+                "detection_executions",
+                "alerts",
+                "incidents",
+                "attck_techniques",
+                "alert_attck",
+                "audit_logs",
+            }
+            self.assertEqual(set(tables), expected_tables)
 
 
 if __name__ == "__main__":

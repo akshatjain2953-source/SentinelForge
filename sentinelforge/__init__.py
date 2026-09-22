@@ -7,6 +7,7 @@ from sentinelforge.config import config_by_name, Config
 from sentinelforge.logging_config import setup_logging
 from sentinelforge.errors import register_error_handlers
 from sentinelforge.database import init_db
+from sentinelforge import models  # noqa: F401
 from sentinelforge.api.v1 import api_v1_bp
 
 __version__ = "0.1.0"
