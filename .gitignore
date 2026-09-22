@@ -20,7 +20,7 @@ ENV/
 *.pgdump
 
 # Migrations (generated - only commit versioned migration scripts)
-migrations/versions/
+migrations/versions/__pycache__/
 
 # IDE
 .vscode/

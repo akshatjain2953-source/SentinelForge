@@ -113,23 +113,30 @@ class DetectionRule(BaseModel):
     """Detection-as-Code rule model."""
     __tablename__ = "detection_rules"
 
+    # YAML rule identifier (string, unique) - corresponds to YAML 'id' field
+    rule_id = Column(String(100), unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
     severity = Column(String(20), nullable=False, index=True)
     version = Column(String(50), nullable=False, default="1.0.0")
-    status = Column(String(20), nullable=False, default="enabled", index=True)
+    # enabled boolean replaces status string - true=enabled, false=disabled
+    enabled = Column(Boolean, default=True, nullable=False, index=True)
     author = Column(String(100), nullable=True)
     format = Column(String(50), nullable=False, default="yaml")
     query = Column(Text, nullable=False)
+    # JSON/JSONB fields for flexible structured data
+    tags = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    attck_techniques = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    test_cases = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
 
     detection_executions = relationship("DetectionExecution", back_populates="detection_rule", lazy="dynamic", cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index("ix_detection_rule_status_severity", "status", "severity"),
+        Index("ix_detection_rule_status_severity", "enabled", "severity"),
     )
 
     def __repr__(self):
-        return f"<DetectionRule id={self.id} name={self.name} severity={self.severity}>"
+        return f"<DetectionRule id={self.id} rule_id={self.rule_id} name={self.name} severity={self.severity} enabled={self.enabled}>"
 
 
 class DetectionExecution(BaseModel):

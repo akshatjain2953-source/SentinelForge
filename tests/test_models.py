@@ -148,6 +148,7 @@ class DetectionRuleModelTests(ModelTestCase):
     def test_create_detection_rule(self):
         """Test creating a detection rule."""
         rule = DetectionRule(
+            rule_id="test-rule-001",
             name="Suspicious Process",
             description="Detects suspicious process execution",
             severity="high",
@@ -157,15 +158,17 @@ class DetectionRuleModelTests(ModelTestCase):
         db.session.commit()
 
         self.assertIsNotNone(rule.id)
+        self.assertEqual(rule.rule_id, "test-rule-001")
         self.assertEqual(rule.name, "Suspicious Process")
         self.assertEqual(rule.severity, "high")
-        self.assertEqual(rule.status, "enabled")
+        self.assertTrue(rule.enabled)
         self.assertEqual(rule.version, "1.0.0")
         self.assertEqual(rule.format, "yaml")
 
     def test_detection_rule_defaults(self):
         """Test detection rule default values."""
         rule = DetectionRule(
+            rule_id="test-rule-002",
             name="Test Rule",
             severity="medium",
             query="SELECT 1",
@@ -173,7 +176,7 @@ class DetectionRuleModelTests(ModelTestCase):
         db.session.add(rule)
         db.session.commit()
 
-        self.assertEqual(rule.status, "enabled")
+        self.assertTrue(rule.enabled)
         self.assertEqual(rule.version, "1.0.0")
         self.assertEqual(rule.format, "yaml")
 
@@ -183,7 +186,7 @@ class DetectionExecutionModelTests(ModelTestCase):
 
     def test_create_detection_execution(self):
         """Test creating a detection execution linking rule and event."""
-        rule = DetectionRule(name="Test Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-003", name="Test Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([rule, event])
         db.session.commit()
@@ -206,7 +209,7 @@ class DetectionExecutionModelTests(ModelTestCase):
 
     def test_detection_execution_no_match(self):
         """Test detection execution with no match."""
-        rule = DetectionRule(name="Test Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-004", name="Test Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([rule, event])
         db.session.commit()
@@ -223,7 +226,7 @@ class DetectionExecutionModelTests(ModelTestCase):
 
     def test_detection_execution_cascade_delete(self):
         """Test cascade delete when rule or event is deleted."""
-        rule = DetectionRule(name="Test Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-005", name="Test Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([rule, event])
         db.session.commit()
@@ -248,7 +251,7 @@ class AlertModelTests(ModelTestCase):
 
     def test_create_alert(self):
         """Test creating an alert from detection execution."""
-        rule = DetectionRule(name="Test Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-006", name="Test Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([rule, event])
         db.session.commit()
@@ -278,7 +281,7 @@ class AlertModelTests(ModelTestCase):
 
     def test_alert_detection_execution_unique(self):
         """Test one alert per detection execution."""
-        rule = DetectionRule(name="Test Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-007", name="Test Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([rule, event])
         db.session.commit()
@@ -313,7 +316,7 @@ class AlertModelTests(ModelTestCase):
     def test_alert_assigned_user(self):
         """Test alert assigned user relationship."""
         user = User(username="analyst", password_hash="hash")
-        rule = DetectionRule(name="Test Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-008", name="Test Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([user, rule, event])
         db.session.commit()
@@ -366,7 +369,7 @@ class IncidentModelTests(ModelTestCase):
         db.session.add_all([user, incident])
         db.session.commit()
 
-        rule = DetectionRule(name="Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-009", name="Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([rule, event])
         db.session.commit()
@@ -398,7 +401,7 @@ class IncidentModelTests(ModelTestCase):
         db.session.add(incident)
         db.session.commit()
 
-        rule = DetectionRule(name="Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-010", name="Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([rule, event])
         db.session.commit()
@@ -481,7 +484,7 @@ class AttckTechniqueModelTests(ModelTestCase):
         """Test many-to-many alert-ATT&CK mapping."""
         technique1 = AttckTechnique(technique_id="T1059", name="Command Interpreter", tactic="Execution")
         technique2 = AttckTechnique(technique_id="T1003", name="OS Credential Dumping", tactic="Credential Access")
-        rule = DetectionRule(name="Rule", severity="high", query="SELECT 1")
+        rule = DetectionRule(rule_id="test-rule-012", name="Rule", severity="high", query="SELECT 1")
         event = TelemetryEvent(source="test", event_type="test", payload={})
         db.session.add_all([technique1, technique2, rule, event])
         db.session.commit()
