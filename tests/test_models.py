@@ -240,7 +240,7 @@ class DetectionExecutionModelTests(ModelTestCase):
         db.session.delete(rule)
         db.session.commit()
 
-        self.assertIsNone(DetectionExecution.query.get(execution_id))
+        self.assertIsNone(db.session.get(DetectionExecution, execution_id))
 
 
 class AlertModelTests(ModelTestCase):
@@ -425,7 +425,7 @@ class IncidentModelTests(ModelTestCase):
         db.session.delete(incident)
         db.session.commit()
 
-        self.assertIsNone(Alert.query.get(alert_id))
+        self.assertIsNone(db.session.get(Alert, alert_id))
 
 
 class AttckTechniqueModelTests(ModelTestCase):
