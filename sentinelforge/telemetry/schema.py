@@ -114,14 +114,6 @@ class TelemetrySchema(BaseModel):
                 raise ValueError("timestamp cannot be more than 5 minutes in the future")
         return v
 
-    @model_validator(mode="after")
-    def validate_at_least_one_structured_field(self) -> "TelemetrySchema":
-        """Ensure at least one structured field is provided beyond required fields."""
-        structured_fields = [self.host, self.user, self.process, self.network, self.file, self.metadata, self.raw]
-        if not any(f is not None for f in structured_fields):
-            raise ValueError("at least one structured field (host, user, process, network, file, metadata, raw) must be provided")
-        return self
-
 
 class TelemetryBatchSchema(BaseModel):
     """Batch telemetry validation schema.

@@ -135,16 +135,23 @@ class TelemetrySchemaValidationTests(unittest.TestCase):
             validate_telemetry(data)
         self.assertIn("source", str(ctx.exception.errors))
 
-    def test_no_structured_fields(self):
-        """Test validation fails when no structured fields provided."""
+    def test_minimal_telemetry_accepted(self):
+        """Test validation accepts telemetry with only required fields."""
         data = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "process_creation",
             "source": "sysmon",
         }
-        with self.assertRaises(ValidationError) as ctx:
-            validate_telemetry(data)
-        self.assertTrue(any("structured field" in err.get("message", "") for err in ctx.exception.errors))
+        result = validate_telemetry(data)
+        self.assertEqual(result.event_type, "process_creation")
+        self.assertEqual(result.source, "sysmon")
+        self.assertIsNone(result.host)
+        self.assertIsNone(result.user)
+        self.assertIsNone(result.process)
+        self.assertIsNone(result.network)
+        self.assertIsNone(result.file)
+        self.assertIsNone(result.metadata)
+        self.assertIsNone(result.raw)
 
     def test_timestamp_too_far_future(self):
         """Test validation fails when timestamp is too far in future."""

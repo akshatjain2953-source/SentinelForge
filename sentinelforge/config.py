@@ -19,6 +19,9 @@ class Config:
     # Security & Error Handling
     PROPAGATE_EXCEPTIONS: bool = False
 
+    # Request Size Limit (16 MB)
+    MAX_CONTENT_LENGTH: int = 16 * 1024 * 1024
+
     # Logging
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
