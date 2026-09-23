@@ -31,6 +31,9 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     SQLALCHEMY_ECHO: bool = False
 
+    # Detection Rules Directory
+    RULES_DIR: str = os.environ.get("SENTINELFORGE_RULES_DIR", os.path.join(os.path.dirname(__file__), "rules"))
+
     @classmethod
     def init_app(cls, app):
         """Hook for initializing configuration on the Flask app."""
