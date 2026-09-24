@@ -301,7 +301,7 @@ class DetectionEngine:
             "event_type": telemetry_event.event_type,
             "source": telemetry_event.source,
             "timestamp": telemetry_event.received_at.isoformat() if telemetry_event.received_at else None,
-            "processed": telemetry_event.processed,
+            "processed": telemetry_event.status == "completed",
         }
 
         # Add payload fields (these come from the normalized payload)

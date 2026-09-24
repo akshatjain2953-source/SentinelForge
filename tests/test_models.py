@@ -123,7 +123,7 @@ class TelemetryEventModelTests(ModelTestCase):
         self.assertEqual(event.source, "sysmon")
         self.assertEqual(event.event_type, "process_creation")
         self.assertEqual(event.payload, payload)
-        self.assertFalse(event.processed)
+        self.assertEqual(event.status, "pending")
         self.assertIsNotNone(event.received_at)
 
     def test_telemetry_json_field(self):

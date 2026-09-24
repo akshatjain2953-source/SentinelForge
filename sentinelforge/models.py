@@ -96,17 +96,19 @@ class TelemetryEvent(BaseModel):
     event_type = Column(String(100), nullable=False, index=True)
     payload = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     received_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
-    processed = Column(Boolean, default=False, nullable=False)
+    status = Column(String(20), default="pending", nullable=False, index=False)
+    claim_count = Column(Integer, default=0, nullable=False)
 
     detection_executions = relationship("DetectionExecution", back_populates="telemetry_event", lazy="dynamic", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_telemetry_source_type", "source", "event_type"),
-        Index("ix_telemetry_received_processed", "received_at", "processed"),
+        Index("ix_telemetry_status", "status"),
+        Index("ix_telemetry_status_updated", "status", "updated_at"),
     )
 
     def __repr__(self):
-        return f"<TelemetryEvent id={self.id} source={self.source} type={self.event_type}>"
+        return f"<TelemetryEvent id={self.id} source={self.source} type={self.event_type} status={self.status}>"
 
 
 class DetectionRule(BaseModel):
