@@ -73,10 +73,11 @@ class DetectionEngineTests(unittest.TestCase):
                 }
             )
 
-            results = engine.evaluate(event)
+            results = engine.evaluate(event, persist=False)
             self.assertEqual(len(results), 1)
             self.assertTrue(results[0].matched)
             self.assertEqual(results[0].rule_id, "test-rule")
+            self.assertEqual(results[0].persistence_status, "none")
 
     def test_non_matching_rule(self):
         """Test that a non-matching rule returns matched=False."""
@@ -108,10 +109,11 @@ class DetectionEngineTests(unittest.TestCase):
                 source="sysmon",
                 event_type="process_creation",
                 payload={"process": {"name": "cmd.exe"}}
-            ))
+            ), persist=False)
 
             self.assertEqual(len(results), 1)
             self.assertFalse(results[0].matched)
+            self.assertEqual(results[0].persistence_status, "none")
 
     def test_multiple_rules(self):
         """Test evaluation of multiple rules."""
@@ -152,12 +154,13 @@ class DetectionEngineTests(unittest.TestCase):
                 source="sysmon",
                 event_type="process_creation",
                 payload={"process": {"name": "cmd.exe"}}
-            ))
+            ), persist=False)
 
             self.assertEqual(len(results), 2)
             matched_rules = [r for r in results if r.matched]
             self.assertEqual(len(matched_rules), 1)
             self.assertEqual(matched_rules[0].rule_id, "rule-1")
+            self.assertEqual(matched_rules[0].persistence_status, "none")
 
     def test_disabled_rule_skipped(self):
         """Test that disabled rules are not evaluated."""
@@ -196,11 +199,12 @@ class DetectionEngineTests(unittest.TestCase):
                 source="sysmon",
                 event_type="process_creation",
                 payload={"process": {"name": "cmd.exe"}}
-            ))
+            ), persist=False)
 
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0].rule_id, "enabled-rule")
             self.assertTrue(results[0].matched)
+            self.assertEqual(results[0].persistence_status, "none")
 
     def test_invalid_query_handled_safely(self):
         """Test that malformed/invalid queries are handled safely."""
@@ -239,7 +243,7 @@ class DetectionEngineTests(unittest.TestCase):
                 source="sysmon",
                 event_type="process_creation",
                 payload={"process": {"name": "cmd.exe"}}
-            ))
+            ), persist=False)
 
             # Should have results for both rules
             self.assertEqual(len(results), 2)
@@ -248,11 +252,13 @@ class DetectionEngineTests(unittest.TestCase):
             bad_result = next(r for r in results if r.rule_id == "bad-rule")
             self.assertFalse(bad_result.matched)
             self.assertIsNotNone(bad_result.error)
+            self.assertEqual(bad_result.persistence_status, "none")
 
             # Good rule should still match
             good_result = next(r for r in results if r.rule_id == "good-rule")
             self.assertTrue(good_result.matched)
             self.assertIsNone(good_result.error)
+            self.assertEqual(good_result.persistence_status, "none")
 
     def test_failing_rule_does_not_stop_others(self):
         """Test that one rule failing doesn't stop evaluation of others."""
@@ -303,7 +309,7 @@ class DetectionEngineTests(unittest.TestCase):
                 source="sysmon",
                 event_type="process_creation",
                 payload={"process": {"name": "cmd.exe"}}
-            ))
+            ), persist=False)
 
             # Should have results for all 3 rules
             self.assertEqual(len(results), 3)
@@ -312,6 +318,7 @@ class DetectionEngineTests(unittest.TestCase):
             bad_result = next(r for r in results if r.rule_id == "bad-rule")
             self.assertFalse(bad_result.matched)
             self.assertIsNotNone(bad_result.error)
+            self.assertEqual(bad_result.persistence_status, "none")
 
             # Good rules should still match
             good1 = next(r for r in results if r.rule_id == "good-1")
@@ -320,6 +327,8 @@ class DetectionEngineTests(unittest.TestCase):
             self.assertTrue(good2.matched)
             self.assertIsNone(good1.error)
             self.assertIsNone(good2.error)
+            self.assertEqual(good1.persistence_status, "none")
+            self.assertEqual(good2.persistence_status, "none")
 
 
 if __name__ == "__main__":

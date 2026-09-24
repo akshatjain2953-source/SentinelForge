@@ -1,8 +1,12 @@
 """Detection rules API endpoints for SentinelForge API v1."""
+import logging
 from flask import Blueprint, jsonify, request, current_app
 from sentinelforge.detection.cache import RuleCache
+from sentinelforge.detection.sync import sync_rules
 
 rules_bp = Blueprint("rules", __name__)
+
+logger = logging.getLogger(__name__)
 
 
 def get_rule_cache():
@@ -71,15 +75,35 @@ def reload_rules():
 
     try:
         count = cache.reload()
+        # Synchronize validated rules to DetectionRule database table
+        validated_rules = cache.get_enabled()
+        db_sync_status = "success"
+        if validated_rules:
+            try:
+                sync_rules(validated_rules)
+            except Exception as e:
+                logger.exception("DetectionRule DB sync failed during reload: %s", e)
+                db_sync_status = "failed"
+                # Cache reload succeeded, but DB sync failed
+                # Return partial success - do NOT expose DB internals
+                return jsonify({
+                    "status": "error",
+                    "message": f"Reloaded {count} rules",
+                    "count": count,
+                    "cache_reloaded": True,
+                    "db_sync": db_sync_status
+                }), 500
+
         return jsonify({
             "status": "success",
             "message": f"Reloaded {count} rules",
-            "count": count
+            "count": count,
+            "cache_reloaded": True,
+            "db_sync": db_sync_status
         })
     except Exception as e:
         # Log the error internally but don't expose details
-        import logging
-        logging.getLogger(__name__).exception("Failed to reload rules")
+        logger.exception("Failed to reload rules")
         return jsonify({
             "status": "error",
             "error": {
