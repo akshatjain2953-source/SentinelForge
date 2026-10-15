@@ -34,6 +34,10 @@ class Config:
     # Detection Rules Directory
     RULES_DIR: str = os.environ.get("SENTINELFORGE_RULES_DIR", os.path.join(os.path.dirname(__file__), "rules"))
 
+    # Detection Worker
+    DETECTION_BATCH_SIZE: int = int(os.environ.get("DETECTION_BATCH_SIZE", "100"))
+    DETECTION_POLL_INTERVAL: float = float(os.environ.get("DETECTION_POLL_INTERVAL", "1.0"))
+
     @classmethod
     def init_app(cls, app):
         """Hook for initializing configuration on the Flask app."""
