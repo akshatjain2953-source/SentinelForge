@@ -1,6 +1,8 @@
 """SentinelForge application package and factory."""
+import atexit
 import logging
 import os
+import sys
 from typing import Optional
 from flask import Flask
 
@@ -10,12 +12,18 @@ from sentinelforge.errors import register_error_handlers
 from sentinelforge.database import init_db, db
 from sentinelforge.detection.cache import RuleCache
 from sentinelforge.detection.sync import sync_rules
+from sentinelforge.detection.processor import DetectionWorker
 from sentinelforge import models  # noqa: F401
 from sentinelforge.api.v1 import api_v1_bp
 
 __version__ = "0.1.0"
 
 logger = logging.getLogger(__name__)
+
+
+def _is_pytest_running() -> bool:
+    """Detect if running under pytest."""
+    return "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
 
 def create_app(config_name: Optional[str] = None) -> Flask:
@@ -62,6 +70,37 @@ def create_app(config_name: Optional[str] = None) -> Flask:
                 logger.exception("DetectionRule DB sync failed at startup: %s", e)
     else:
         logger.info("Skipping DetectionRule DB sync during testing")
+
+    # Initialize DetectionWorker (per Flask app instance)
+    worker = DetectionWorker(app, app.extensions["rule_cache"])
+    app.extensions["detection_worker"] = worker
+
+    # Start worker only in non-testing environments, not under pytest,
+    # and only in the reloader child process (or when reloader is disabled).
+    # WERKZEUG_RUN_MAIN is "true" in the serving child, "false" in the
+    # reloader parent, and unset when reloader is disabled.
+    is_pytest = _is_pytest_running()
+    is_reloader_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+    is_reloader_parent = os.environ.get("WERKZEUG_RUN_MAIN") == "false"
+    reloader_disabled = "WERKZEUG_RUN_MAIN" not in os.environ
+
+    should_start_worker = (
+        not app.config.get("TESTING", False)
+        and not is_pytest
+        and (reloader_disabled or is_reloader_child)
+        and not is_reloader_parent
+    )
+
+    if should_start_worker:
+        worker.start()
+
+        # Best-effort shutdown on process exit; register once per app instance
+        def _shutdown_worker():
+            w = app.extensions.get("detection_worker")
+            if w and w.is_running():
+                w.stop(timeout=10)
+
+        atexit.register(_shutdown_worker)
 
     # Register centralized error handlers
     register_error_handlers(app)
